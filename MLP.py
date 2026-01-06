@@ -6,7 +6,7 @@ from helpers import *
 import pandas as pd
 
 class EuropeDataset(Dataset):
-    def __init__(self, csv_file):
+    def __init__(self, csv_file: str):
         """
         Args:
             csv_file (string): Path to the CSV file with annotations.
