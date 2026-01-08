@@ -27,11 +27,17 @@ def get_loaders(path, transform, batch_size):
 
 # Set the random seed for reproducibility
 np.random.seed(0)
+if torch.cuda.is_available():
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda')
+elif torch.backends.mps.is_available():
+    device =  torch.device("mps")
+else:
+    device =torch.device("cpu")
+# device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 transform = transforms.Compose([transforms.Resize((224, 224)), transforms.CenterCrop(64), transforms.ToTensor()])
 batch_size = 32
-path = 'PATH_TO_whicfaceisreal' # For example '/cs/usr/username/whichfaceisreal/'
+path = 'whichfaceisreal' # For example '/cs/usr/username/whichfaceisreal/'
 train_loader, val_loader, test_loader = get_loaders(path, transform, batch_size)
 
 
@@ -56,4 +62,10 @@ with torch.no_grad():
 
 
 ### YOUR XGBOOST CODE GOES HERE ###
+model = XGBClassifier(random_state=42)
+model.fit(train_data, train_labels)
+
+# Evaluate accuracy
+accuracy = model.score(test_data, test_labels)
+print(f"XGBoost Test Accuracy: {accuracy:.4f}")
 

@@ -16,8 +16,8 @@ class EuropeDataset(Dataset):
             df = pd.read_csv(csv_file)
         except FileNotFoundError:
             raise FileNotFoundError(f"File {csv_file} not found.")
-        self. features = torch.from_pandas (df.drop('country', axis=1)).float()
-        self.labels = torch.from_pandas (df['country']).long()
+        self.features = torch.from_numpy (df[['long', 'lat']].to_numpy()).float()
+        self.labels = torch.from_numpy(df['country'].to_numpy()).long()
         # Load the data into a tensors
         # The features shape is (n,d)
         # The labels shape is (n)
@@ -43,7 +43,7 @@ class EuropeDataset(Dataset):
     
 
 class MLP(nn.Module):
-    def __init__(self, num_hidden_layers, hidden_dim, output_dim):
+    def __init__(self, num_hidden_layers, hidden_dim, output_dim, with_batchnorm=False):
         super(MLP, self).__init__()
         """
         Args:
@@ -56,12 +56,12 @@ class MLP(nn.Module):
         input_dim = 2  # since we have longitude and latitude as input features
         for _ in range(num_hidden_layers):
             self.hiddem_layer.append(nn.Linear(input_dim, hidden_dim))
-            self.hiddem_layer.append(nn.BatchNorm1d(hidden_dim))
+            if with_batchnorm:
+                self.hiddem_layer.append(nn.BatchNorm1d(hidden_dim))
             self.hiddem_layer.append(nn.ReLU())
             input_dim = hidden_dim
         self.hiddem_layer.append(nn.Linear(hidden_dim, output_dim))
         self.model = nn.Sequential(*self.hiddem_layer)
-
     def forward(self, x):
         #### YOUR CODE HERE ####
        return self.model(x)
@@ -116,8 +116,10 @@ def train(train_dataset, val_dataset, test_dataset, model, lr=0.001, epochs=50, 
             best_loss_val = val_loss
             best_model = model.state_dict()
             ep_where_best = ep
-        print('Epoch {:}, Train Acc: {:.3f}, Val Acc: {:.3f}, Test Acc: {:.3f}'.format(ep, train_accs[-1], val_accs[-1], test_accs[-1]))        
-    return model, train_accs, val_accs, test_accs, train_losses, val_losses, test_losses 
+        print('Epoch {:}, Train Acc: {:.3f}, Val Acc: {:.3f}, Test Acc: {:.3f}'.format(ep, train_accs[-1], val_accs[-1], test_accs[-1]))  
+    model.load_state_dict(best_model)
+    print(f'Best model found at epoch {ep_where_best} with validation loss {best_loss_val:.4f}')
+    return model, train_accs, val_accs, test_accs, train_losses, val_losses, test_losses, best_model,best_loss_val
 
 def measure_current_model_on_set(dataloader, model, criterion):
     # implement a function that measures accuracy and loss on a given dataloader and model
@@ -139,38 +141,51 @@ if __name__ == '__main__':
     # seed for reproducibility
     torch.manual_seed(0)    
 
-    train_dataset = EuropeDataset('input+data/train.csv')
-    val_dataset = EuropeDataset('input+data/validation.csv')
-    test_dataset = EuropeDataset('input+data/test.csv')
-
+    train_dataset = EuropeDataset('input_data/train.csv')
+    val_dataset = EuropeDataset('input_data/validation.csv')
+    test_dataset = EuropeDataset('input_data/test.csv')
+    output_dim = len(train_dataset.labels.unique())
     #### YOUR CODE HERE #####
     # Find the number of classes, e.g.:
     # output_dim = len(train_dataset.labels.unique()) 
-    model = MLP(6, 16, output_dim)
-    
-
-
-    model, train_accs, val_accs, test_accs, train_losses, val_losses, test_losses = train(train_dataset, val_dataset, test_dataset, model, lr=0.001, epochs=50, batch_size=256)
-
-    plt.figure()
-    plt.plot(train_losses, label='Train', color='red')
-    plt.plot(val_losses, label='Val', color='blue')
-    plt.plot(test_losses, label='Test', color='green')
-    plt.title('Losses')
-    plt.legend()
-    plt.show()
-
-    plt.figure()
-    plt.plot(train_accs, label='Train', color='red')
-    plt.plot(val_accs, label='Val', color='blue')
-    plt.plot(test_accs, label='Test', color='green')
-    plt.title('Accs.')
-    plt.legend()
-    plt.show()
+    lrs= [0.01, 0.001, 0.00001]
+    epochs = [50,100]
+    model = MLP(6, 16, output_dim, with_batchnorm=False)
+    models = {key : None for key in lrs}
+    for lr in lrs:
+        model, train_accs, val_accs, test_accs, train_losses, val_losses, test_losses = train(train_dataset, val_dataset, test_dataset, model, lr=lr, epochs=50, batch_size=256)
+   
 
 
 
-    train_data = pd.read_csv('train.csv')
-    val_data = pd.read_csv('validation.csv')
-    test_data = pd.read_csv('test.csv')
+    train_data = pd.read_csv('input_data/train.csv')
+    val_data = pd.read_csv('input_data/validation.csv')
+    test_data = pd.read_csv('input_data/test.csv')
     plot_decision_boundaries(model, test_data[['long', 'lat']].values, test_data['country'].values, 'Decision Boundaries', implicit_repr=False)
+
+def plot_and_save_results(train_accs, val_accs, test_accs, train_losses, val_losses, test_losses, filename):
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+    
+    # Plot losses
+    ax1.plot(train_losses, label='Train')
+    ax1.plot(val_losses, label='Validation')
+    ax1.plot(test_losses, label='Test')
+    ax1.set_xlabel('Epochs')
+    ax1.set_ylabel('Loss')
+    ax1.set_title('Loss over Epochs')
+    ax1.legend()
+    ax1.grid(True)
+    
+    # Plot accuracies
+    ax2.plot(train_accs, label='Train')
+    ax2.plot(val_accs, label='Validation')
+    ax2.plot(test_accs, label='Test')
+    ax2.set_xlabel('Epochs')
+    ax2.set_ylabel('Accuracy')
+    ax2.set_title('Accuracy over Epochs')
+    ax2.legend()
+    ax2.grid(True)
+    
+    plt.tight_layout()
+    plt.savefig(filename)
+    plt.close()
